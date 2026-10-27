@@ -24,3 +24,19 @@ Upon successful completion of the Questa simulation, the Python script dynamical
 2. Clone this repository and open the directory in your terminal.
 3. Execute `python run_sim.py` to compile the SV files and run the UVM test.
 4. Review the generated UVM transcript for the Scoreboard results, then `Ctrl + Click` the generated file URL in the terminal to watch the animated architectural flow in your browser.
+## 
+<div align="center">
+  <img src="https://github.com/Marsyleeno/uvm-concept-visualizer/blob/main/execution-logging.png?raw=true"/>
+</div>
+
+### Understanding the Simulation Transcript 
+
+The transcript file is the official log of the hardware simulation. Since command-line tests do not have a built-in graphical interface, this text output proves that the verification environment actually ran and worked. 
+
+Here is what the log is showing:
+* **Transaction Tracking (`@669`)**: A unique "Order Ticket" ID assigned to a specific coffee order so the simulator can track it through the system.
+* **Data Observation (`mon_tr`)**: A table printed by the Monitor showing the exact variables (like `size`, `with_milk`, and the resulting `coffee_type`) as they were captured from the hardware interface.
+* **Verification Result (`[SCOREBOARD]`)**: The final pass/fail check. It prints a confirmation message proving that the hardware (DUT) dispensed the correct coffee based on the inputs it received.
+
+
+
