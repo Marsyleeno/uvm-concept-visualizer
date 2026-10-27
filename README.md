@@ -1,7 +1,7 @@
 # UVM Concept Visualizer: Coffee Machine Analogy
-
+https://github.com/Marsyleeno/uvm-concept-visualizer/blob/main/uvm-visualizer.png
 <div align="center">
-  <img src="" alt="UVM Architecture Coffee Machine Analogy Visualization"/>
+  <img src="https://github.com/Marsyleeno/uvm-concept-visualizer/blob/main/uvm-visualizer.png"/>
 </div>
 
 This project is a Python-automated SystemVerilog verification environment that models the Universal Verification Methodology (UVM) using an intuitive coffee machine analogy. Designed to bridge the gap between command-line Hardware Description Language (HDL) execution and system-level comprehension, it pairs a functional UVM testbench with an interactive HTML/JS visualization of the verification architecture.
