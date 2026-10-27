@@ -1,5 +1,5 @@
 # UVM Concept Visualizer: Coffee Machine Analogy
-https://github.com/Marsyleeno/uvm-concept-visualizer/blob/main/uvm-visualizer.png
+
 <div align="center">
   <img src="https://github.com/Marsyleeno/uvm-concept-visualizer/blob/main/uvm-visualizer.png"/>
 </div>
