@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UVM Coffee Machine Simulation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #000000;
+        }
+        
+        /* Custom Animations */
+        @keyframes pulse-border {
+            0%, 100% { border-color: inherit; box-shadow: none; }
+            50% { border-color: #fbbf24; box-shadow: 0 0 15px 5px rgba(251, 191, 36, 0.6); }
+        }
+        .active-node {
+            animation: pulse-border 1s infinite;
+            z-index: 10;
+        }
+
+        @keyframes signal-flow {
+            0% { background-position: 100% 0; }
+            100% { background-position: -100% 0; }
+        }
+        .signal-active {
+            background: linear-gradient(90deg, #10b981 25%, #34d399 50%, #10b981 75%);
+            background-size: 200% 100%;
+            animation: signal-flow 1s linear infinite;
+        }
+
+        /* Token styling */
+        #token {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background-color: white;
+            border-radius: 50%;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 50;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* Workflow Arrow Rails: solid guides that light up with flowing current */
+        @keyframes flow-dots {
+            from { stroke-dashoffset: 32; }
+            to   { stroke-dashoffset: 0; }
+        }
+        .workflow-line {
+            fill: none;
+            stroke: #0f172a;
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            transition: stroke 0.3s, stroke-width 0.3s, filter 0.3s;
+        }
+        .workflow-line.active {
+            stroke: #3b82f6;
+            stroke-width: 4;
+            filter: drop-shadow(0 0 5px rgba(59, 130, 246, 0.75));
+        }
+        .workflow-flow {
+            fill: none;
+            stroke: #fff;
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-dasharray: 0.1 15.9;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .workflow-flow.active {
+            opacity: 0.95;
+            animation: flow-dots 0.8s linear infinite;
+        }
+        .step-badge .ring {
+            fill: #fff;
+            stroke: #0f172a;
+            stroke-width: 2.5;
+            transition: fill 0.3s, stroke 0.3s;
+        }
+        .step-badge .num {
+            font: 800 12px 'Inter', sans-serif;
+            fill: #0f172a;
+            text-anchor: middle;
+            transition: fill 0.3s;
+        }
+        .step-badge.active .ring { fill: #3b82f6; stroke: #1d4ed8; }
+        .step-badge.active .num  { fill: #fff; }
+        @media (prefers-reduced-motion: reduce) {
+            .workflow-flow.active { animation: none; }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+
+    <div class="max-w-6xl w-full bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-gray-200">
+        
+        <!-- Header Controls -->
+        <div class="bg-slate-800 text-white p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-bold">UVM Architecture: Coffee Machine Analogy</h1>
+                <p class="text-slate-300 text-sm mt-1">Watch how a transaction flows through the verification environment.</p>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="runSimulation('valid')" id="btn-valid" class="bg-green-500 hover:bg-green-600 text-white px-5 py-2 rounded-lg font-semibold transition-colors shadow-lg flex items-center gap-2">
+                    ☕ Run Valid Order
+                </button>
+                <button onclick="runSimulation('invalid')" id="btn-invalid" class="bg-red-500 hover:bg-red-600 text-white px-5 py-2 rounded-lg font-semibold transition-colors shadow-lg flex items-center gap-2">
+                    🚫 Run Error Order
+                </button>
+                <button onclick="resetSimulation()" id="btn-reset" class="bg-slate-600 hover:bg-slate-700 text-white px-5 py-2 rounded-lg font-semibold transition-colors shadow-lg hidden">
+                    🔄 Reset
+                </button>
+            </div>
+        </div>
+
+        <!-- Simulation Canvas -->
+        <div class="relative w-full min-h-[700px] bg-gray-100 p-8 pb-24 flex" id="canvas">
+            
+            <!-- Dynamic SVG Arrows Overlay (sits above the boxes so the guide rails are always visible) -->
+            <svg id="arrows-svg" class="absolute top-0 left-0 w-full h-full pointer-events-none" style="z-index: 20;" aria-hidden="true">
+                <defs>
+                    <marker id="arrowhead" viewBox="0 0 12 12" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+                        <polygon points="1 1, 11 6, 1 11" fill="#0f172a" />
+                    </marker>
+                    <marker id="arrowhead-active" viewBox="0 0 12 12" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="userSpaceOnUse">
+                        <polygon points="1 1, 11 6, 1 11" fill="#3b82f6" />
+                    </marker>
+                    <marker id="dot" viewBox="0 0 10 10" markerWidth="10" markerHeight="10" refX="5" refY="5" markerUnits="userSpaceOnUse">
+                        <circle cx="5" cy="5" r="4" fill="#0f172a" />
+                    </marker>
+                    <marker id="dot-active" viewBox="0 0 10 10" markerWidth="10" markerHeight="10" refX="5" refY="5" markerUnits="userSpaceOnUse">
+                        <circle cx="5" cy="5" r="4" fill="#3b82f6" />
+                    </marker>
+                </defs>
+                <!-- Guide rails (always visible) -->
+                <path id="path-seq-drv" class="workflow-line" marker-start="url(#dot)" marker-end="url(#arrowhead)" />
+                <path id="path-drv-dut" class="workflow-line" marker-start="url(#dot)" marker-end="url(#arrowhead)" />
+                <path id="path-int-mon" class="workflow-line" marker-start="url(#dot)" marker-end="url(#arrowhead)" />
+                <path id="path-mon-sb"  class="workflow-line" marker-start="url(#dot)" marker-end="url(#arrowhead)" />
+                <!-- Flowing current overlays (same geometry, shown only while active) -->
+                <path id="path-seq-drv-flow" class="workflow-flow" />
+                <path id="path-drv-dut-flow" class="workflow-flow" />
+                <path id="path-int-mon-flow" class="workflow-flow" />
+                <path id="path-mon-sb-flow"  class="workflow-flow" />
+                <!-- Numbered step badges (built in JS) -->
+                <g id="badges"></g>
+            </svg>
+
+            <!-- Animated Token -->
+            <div id="token">📝</div>
+
+            <!-- Left Side: UVM Testbench -->
+            <div class="flex-1 flex flex-col z-10">
+                <div class="flex-1 w-full border-4 border-pink-300 bg-pink-50 rounded-xl p-4 flex flex-col shadow-inner relative">
+                    <span class="text-pink-700 font-bold text-lg mb-2 block">1. TEST</span>
+                    
+                    <!-- ENVIRONMENT -->
+                    <div class="flex-1 border-4 border-blue-300 bg-blue-50 rounded-xl p-4 flex flex-col gap-4 relative">
+                        <span class="text-blue-700 font-bold text-lg block">2. ENVIRONMENT</span>
+                        
+                        <!-- SCOREBOARD -->
+                        <div id="node-scoreboard" class="w-full min-h-[6rem] border-4 border-orange-400 bg-orange-100 rounded-xl p-3 flex justify-between items-center transition-all duration-300 relative bg-opacity-90">
+                            <div>
+                                <span class="text-orange-800 font-bold block">5. SCOREBOARD (Checker)</span>
+                                <span class="text-sm text-orange-700 block">Compares Expected vs Actual</span>
+                            </div>
+                            <div class="text-4xl hidden lg:block">📋</div>
+                            
+                            <div class="flex gap-2 relative z-20">
+                                <div class="bg-white border border-gray-300 p-2 rounded text-xs text-center w-24">
+                                    <div class="font-bold text-gray-500">Expected</div>
+                                    <div id="sb-expected" class="font-bold">-</div>
+                                </div>
+                                <div class="bg-white border border-gray-300 p-2 rounded text-xs text-center w-24">
+                                    <div class="font-bold text-gray-500">Actual</div>
+                                    <div id="sb-actual" class="font-bold">-</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- AGENT -->
+                        <div class="flex-1 border-4 border-yellow-200 bg-yellow-50 rounded-xl p-4 flex flex-col mt-2 relative">
+                            <span class="text-yellow-700 font-bold text-lg mb-4">3. AGENT</span>
+                            
+                            <div class="flex flex-row justify-between items-center flex-1">
+                                <div class="flex flex-col gap-10">
+                                    <!-- SEQUENCER -->
+                                    <div id="node-sequencer" class="w-40 h-32 border-4 border-purple-400 bg-purple-100 rounded-xl p-3 flex flex-col justify-center items-center text-center transition-all duration-300 relative bg-opacity-90">
+                                        <span class="text-purple-800 font-bold block">SEQUENCER</span>
+                                        <span class="text-xs text-purple-700">Order Manager</span>
+                                        <div class="text-3xl mt-1">📝</div>
+                                    </div>
+
+                                    <!-- DRIVER -->
+                                    <div id="node-driver" class="w-40 h-32 border-4 border-green-400 bg-green-100 rounded-xl p-3 flex flex-col justify-center items-center text-center transition-all duration-300 relative bg-opacity-90">
+                                        <span class="text-green-800 font-bold block">DRIVER</span>
+                                        <span class="text-xs text-green-700">The Barista</span>
+                                        <div class="text-3xl mt-1">🤵🏻</div>
+                                    </div>
+                                </div>
+
+                                <!-- MONITOR -->
+                                <div id="node-monitor" class="w-40 h-24 border-4 border-red-400 bg-red-100 rounded-xl p-3 flex flex-col justify-center items-center text-center transition-all duration-300 relative bg-opacity-90">
+                                    <span class="text-red-800 font-bold block">MONITOR</span>
+                                    <span class="text-xs text-red-700">The Observer</span>
+                                    <div class="text-3xl mt-1">📹</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Middle: Interface -->
+            <div class="w-24 flex flex-col items-center mx-4 z-10">
+                <span class="text-gray-500 font-bold mb-2">INTERFACE</span>
+                <div id="node-interface" class="w-8 flex-1 mb-8 bg-slate-800 rounded-full relative transition-all duration-300"></div>
+            </div>
+
+            <!-- Right Side: DUT -->
+            <div class="w-72 flex flex-col z-10">
+                <div class="flex-1 w-full border-4 border-gray-300 bg-gray-50 rounded-xl p-4 shadow-inner flex flex-col relative">
+                    <span class="text-gray-700 font-bold text-lg mb-2 block">HARDWARE</span>
+                    
+                    <div id="node-dut" class="flex-1 border-4 border-orange-800 bg-orange-200 rounded-xl p-4 flex flex-col justify-center items-center text-center transition-all duration-300 relative shadow-lg bg-opacity-90">
+                        <span class="text-orange-900 font-bold text-xl block mb-2">DUT</span>
+                        <span class="text-sm text-orange-800 font-semibold mb-4">(Coffee Machine)</span>
+                        <div class="text-7xl" id="dut-emoji">☕</div>
+                        
+                        <div class="mt-6 w-full text-left bg-white p-2 rounded border border-orange-300 text-xs font-mono relative z-20">
+                            <div>coffee_type <= <span id="sig-coffee_type" class="text-blue-600">X</span></div>
+                            <div>size      <= <span id="sig-size" class="text-blue-600">X</span></div>
+                            <div>with_milk <= <span id="sig-milk" class="text-blue-600">X</span></div>
+                            <div>with_foam <= <span id="sig-foam" class="text-blue-600">X</span></div>
+                            <div class="mt-2 text-green-600">output = <span id="sig-out" class="font-bold">NONE</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status Overlay -->
+            <div id="status-panel" class="absolute bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl font-semibold opacity-0 transition-opacity duration-300 text-lg z-50 flex items-center gap-3">
+                <span id="status-icon">⏳</span>
+                <span id="status-text">Idle</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        let isRunning = false;
+
+        // Elements
+        const token = document.getElementById('token');
+        const statusPanel = document.getElementById('status-panel');
+        const statusText = document.getElementById('status-text');
+        const statusIcon = document.getElementById('status-icon');
+        const dutEmoji = document.getElementById('dut-emoji');
+        const btnValid = document.getElementById('btn-valid');
+        const btnInvalid = document.getElementById('btn-invalid');
+        const btnReset = document.getElementById('btn-reset');
+
+        const sigSize = document.getElementById('sig-size');
+        const sigMilk = document.getElementById('sig-milk');
+        const sigCoffee = document.getElementById('sig-coffee_type');
+        const sigFoam = document.getElementById('sig-foam');
+        const sigOut = document.getElementById('sig-out');
+        const sbExpected = document.getElementById('sb-expected');
+        const sbActual = document.getElementById('sb-actual');
+
+        // --- Rounded 90-degree arrow routing ---
+        const SVG_NS = 'http://www.w3.org/2000/svg';
+        const FLOW_STEPS = ['path-seq-drv', 'path-drv-dut', 'path-int-mon', 'path-mon-sb'];
+
+        // Turns a list of corner points into a path with softened corners
+        function roundedPath(pts, r = 14) {
+            let d = `M ${pts[0].x} ${pts[0].y}`;
+            for (let i = 1; i < pts.length - 1; i++) {
+                const prev = pts[i - 1], cur = pts[i], next = pts[i + 1];
+                const l1 = Math.hypot(cur.x - prev.x, cur.y - prev.y);
+                const l2 = Math.hypot(next.x - cur.x, next.y - cur.y);
+                const rr = Math.min(r, l1 / 2, l2 / 2);
+                const a = { x: cur.x - (cur.x - prev.x) / l1 * rr, y: cur.y - (cur.y - prev.y) / l1 * rr };
+                const b = { x: cur.x + (next.x - cur.x) / l2 * rr, y: cur.y + (next.y - cur.y) / l2 * rr };
+                d += ` L ${a.x} ${a.y} Q ${cur.x} ${cur.y} ${b.x} ${b.y}`;
+            }
+            const last = pts[pts.length - 1];
+            return d + ` L ${last.x} ${last.y}`;
+        }
+
+        function buildBadges() {
+            const g = document.getElementById('badges');
+            if (!g || g.childElementCount) return;
+            FLOW_STEPS.forEach((id, i) => {
+                const b = document.createElementNS(SVG_NS, 'g');
+                b.setAttribute('id', `badge-${id}`);
+                b.setAttribute('class', 'step-badge');
+                b.innerHTML = `<circle class="ring" r="12"></circle><text class="num" dy="0.35em">${i + 1}</text>`;
+                g.appendChild(b);
+            });
+        }
+
+        function setRoute(id, pts, badgeAt) {
+            const d = roundedPath(pts);
+            document.getElementById(id).setAttribute('d', d);
+            document.getElementById(`${id}-flow`).setAttribute('d', d);
+            const badge = document.getElementById(`badge-${id}`);
+            if (badge) badge.setAttribute('transform', `translate(${badgeAt.x} ${badgeAt.y})`);
+        }
+
+        function updateArrows() {
+            const canvas = document.getElementById('canvas');
+            if (!canvas) return;
+            buildBadges();
+            const cr = canvas.getBoundingClientRect();
+            const box = id => {
+                const r = document.getElementById(id).getBoundingClientRect();
+                return {
+                    l: r.left - cr.left, r: r.right - cr.left,
+                    t: r.top - cr.top,   b: r.bottom - cr.top,
+                    cx: (r.left + r.right) / 2 - cr.left,
+                    cy: (r.top + r.bottom) / 2 - cr.top
+                };
+            };
+            const seq = box('node-sequencer'), drv = box('node-driver'), dut = box('node-dut');
+            const mon = box('node-monitor'), ifc = box('node-interface'), sb = box('node-scoreboard');
+            const gap = 2; // keeps arrow tips just outside the box borders
+
+            // 1. Sequencer -> Driver (straight down)
+            setRoute('path-seq-drv',
+                [{ x: seq.cx, y: seq.b }, { x: seq.cx, y: drv.t - gap }],
+                { x: seq.cx, y: seq.b + 16 });
+
+            // 2. Driver -> DUT (down, across under the interface, up into the DUT)
+            const low = Math.max(drv.b, dut.b) + 14;
+            setRoute('path-drv-dut',
+                [{ x: drv.cx, y: drv.b }, { x: drv.cx, y: low }, { x: dut.cx, y: low }, { x: dut.cx, y: dut.b + gap }],
+                { x: (drv.cx + dut.cx) / 2, y: low });
+
+            // 3. Interface -> Monitor (straight left)
+            const startX = ifc.l - 6, endX = mon.r + gap;
+            setRoute('path-int-mon',
+                [{ x: startX, y: mon.cy }, { x: endX, y: mon.cy }],
+                { x: (startX + endX) / 2, y: mon.cy });
+
+            // 4. Monitor -> Scoreboard (up, left through the gap above the Agent box, up)
+            const midY = sb.b + 17;
+            const tx = sb.l + 64;
+            setRoute('path-mon-sb',
+                [{ x: mon.cx, y: mon.t }, { x: mon.cx, y: midY }, { x: tx, y: midY }, { x: tx, y: sb.b + gap }],
+                { x: (mon.cx + tx) / 2, y: midY });
+        }
+
+        function setArrowState(pathId, isActive) {
+            const path = document.getElementById(pathId);
+            if (!path) return;
+            path.classList.toggle('active', isActive);
+            path.setAttribute('marker-end', isActive ? 'url(#arrowhead-active)' : 'url(#arrowhead)');
+            path.setAttribute('marker-start', isActive ? 'url(#dot-active)' : 'url(#dot)');
+            const flow = document.getElementById(`${pathId}-flow`);
+            if (flow) flow.classList.toggle('active', isActive);
+            const badge = document.getElementById(`badge-${pathId}`);
+            if (badge) badge.classList.toggle('active', isActive);
+        }
+
+        // Redraw routing dynamically if window resizes
+        window.addEventListener('resize', updateArrows);
+        
+        // --- Simulation Logic ---
+        function getCenterCoords(elementId) {
+            const el = document.getElementById(elementId);
+            const canvas = document.getElementById('canvas');
+            const elRect = el.getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
+            
+            return {
+                x: elRect.left - canvasRect.left + (elRect.width / 2) - 20,
+                y: elRect.top - canvasRect.top + (elRect.height / 2) - 20
+            };
+        }
+
+        function setStatus(text, icon = '⏳', show = true) {
+            statusText.innerText = text;
+            statusIcon.innerText = icon;
+            statusPanel.style.opacity = show ? '1' : '0';
+        }
+
+        function pulseNode(elementId, add = true) {
+            const el = document.getElementById(elementId);
+            if (add) el.classList.add('active-node');
+            else el.classList.remove('active-node');
+        }
+
+        async function moveToken(toElementId, emoji = '📝', durationMs = 600) {
+            const coords = getCenterCoords(toElementId);
+            token.style.transitionDuration = `${durationMs}ms`;
+            token.style.left = `${coords.x}px`;
+            token.style.top = `${coords.y}px`;
+            token.innerHTML = emoji;
+            await sleep(durationMs);
+        }
+
+        // Token travels along an arrow rail instead of cutting straight across
+        async function ridePath(pathId, durationMs, emoji) {
+            const path = document.getElementById(pathId);
+            const len = path.getTotalLength();
+            const place = pt => {
+                token.style.left = `${pt.x - 20}px`;
+                token.style.top = `${pt.y - 20}px`;
+            };
+            const start = path.getPointAtLength(0);
+            token.innerHTML = emoji;
+            if (token.style.opacity === '1') {
+                // Glide from wherever it is to the start of the rail
+                token.style.transition = 'left 0.25s ease, top 0.25s ease';
+                place(start);
+                await sleep(260);
+            }
+            token.style.transition = 'none';
+            place(start);
+            token.style.opacity = '1';
+            await new Promise(resolve => {
+                const t0 = performance.now();
+                const step = now => {
+                    const k = Math.min(1, (now - t0) / durationMs);
+                    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+                    place(path.getPointAtLength(len * e));
+                    if (k < 1) requestAnimationFrame(step); else resolve();
+                };
+                requestAnimationFrame(step);
+            });
+            token.style.transition = '';
+        }
+
+        function resetSimulation() {
+            if (isRunning) return;
+            token.style.opacity = '0';
+            token.style.transitionDuration = '0ms';
+            setStatus('Idle', '⏳', false);
+            
+            ['node-sequencer', 'node-driver', 'node-interface', 'node-dut', 'node-monitor', 'node-scoreboard'].forEach(id => {
+                pulseNode(id, false);
+            });
+            document.getElementById('node-interface').classList.remove('signal-active');
+            
+            ['path-seq-drv', 'path-drv-dut', 'path-int-mon', 'path-mon-sb'].forEach(id => {
+                setArrowState(id, false);
+            });
+
+            sigCoffee.innerText = 'X';
+            sigSize.innerText = 'X';
+            sigMilk.innerText = 'X';
+            sigFoam.innerText = 'X';
+            sigOut.innerText = 'NONE';
+            sbExpected.innerText = '-';
+            sbActual.innerText = '-';
+            sbExpected.className = 'font-bold';
+            sbActual.className = 'font-bold';
+            dutEmoji.innerText = '☕';
+
+            btnValid.classList.remove('hidden');
+            btnInvalid.classList.remove('hidden');
+            btnReset.classList.add('hidden');
+        }
+
+        async function runSimulation(type) {
+            if (isRunning) return;
+            isRunning = true;
+            btnValid.classList.add('hidden');
+            btnInvalid.classList.add('hidden');
+
+            const isLatte = (type === 'valid'); 
+
+            // STEP 1: Sequencer
+            const startCoords = getCenterCoords('node-sequencer');
+            token.style.transitionDuration = '0ms';
+            token.style.left = `${startCoords.x}px`;
+            token.style.top = `${startCoords.y}px`;
+            token.innerHTML = '📝';
+            token.style.opacity = '1';
+
+            setStatus('Sequencer generating order...', '📝');
+            pulseNode('node-sequencer', true);
+            await sleep(800);
+            
+            // STEP 2: Driver
+            pulseNode('node-sequencer', false);
+            setStatus('Driver translating order to signals...', '👨🍳');
+            pulseNode('node-driver', true);
+            setArrowState('path-seq-drv', true);
+            await ridePath('path-seq-drv', 700, '📝');
+            await moveToken('node-driver', '📝', 250);
+            await sleep(400);
+
+            // STEP 3: Interface & DUT
+            setArrowState('path-seq-drv', false);
+            setStatus('Driving signals to DUT Interface...', '⚡');
+            token.style.opacity = '0';
+            pulseNode('node-driver', false);
+            
+            setArrowState('path-drv-dut', true);
+            document.getElementById('node-interface').classList.add('signal-active');
+            await ridePath('path-drv-dut', 1200, '⚡');
+            token.style.opacity = '0';
+            pulseNode('node-dut', true);
+
+            sigCoffee.innerText = isLatte ? 'LATTE' : 'ESPRESSO';
+            sigSize.innerText = isLatte ? 'LARGE' : 'SMALL';
+            sigMilk.innerText = '1';
+            sigFoam.innerText = '0';
+
+            dutEmoji.innerText = '⚙️';
+            await sleep(800);
+            
+            document.getElementById('node-interface').classList.remove('signal-active');
+            dutEmoji.innerText = '🥤';
+            const actualOutput = isLatte ? 'LATTE' : 'NONE'; 
+            sigOut.innerText = actualOutput;
+            
+            // STEP 4: Monitor
+            setArrowState('path-drv-dut', false);
+            setStatus('Monitor observing Interface signals...', '📹');
+            pulseNode('node-dut', false);
+            pulseNode('node-monitor', true);
+            
+            setArrowState('path-int-mon', true);
+            await ridePath('path-int-mon', 700, '📦');
+            await moveToken('node-monitor', '📦', 250);
+            await sleep(600);
+
+            // STEP 5: Scoreboard
+            setArrowState('path-int-mon', false);
+            pulseNode('node-monitor', false);
+            setStatus('Scoreboard comparing results...', '📋');
+            pulseNode('node-scoreboard', true);
+            
+            setArrowState('path-mon-sb', true);
+            await ridePath('path-mon-sb', 1100, '📦');
+            token.style.opacity = '0';
+
+            const expectedOutput = isLatte ? 'LATTE' : 'ESPRESSO'; 
+            sbExpected.innerText = expectedOutput;
+            await sleep(500);
+            sbActual.innerText = actualOutput;
+            await sleep(500);
+
+            // STEP 6: Result
+            setArrowState('path-mon-sb', false);
+            if (expectedOutput === actualOutput) {
+                setStatus('TEST PASSED: Coffee matches expectation!', '✅');
+                sbExpected.classList.add('text-green-600');
+                sbActual.classList.add('text-green-600');
+            } else {
+                setStatus('TEST FAILED: DUT output mismatch!', '❌');
+                sbExpected.classList.add('text-green-600');
+                sbActual.classList.add('text-red-600');
+            }
+            
+            pulseNode('node-scoreboard', false);
+            isRunning = false;
+            btnReset.classList.remove('hidden');
+        }
+
+        window.onload = () => {
+            resetSimulation();
+            setTimeout(updateArrows, 150); // Ensures elements are fully rendered before calculating arrow endpoints
+            if (document.fonts && document.fonts.ready) document.fonts.ready.then(updateArrows);
+        };
+    </script>
+</body>
+</html>
